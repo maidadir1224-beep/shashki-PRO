@@ -93,6 +93,7 @@ const firebaseConfig = {
   messagingSenderId: "538229764774",
   appId: "1:538229764774:web:02ab54b5a9d3e91e6bba67"
 };
+
 firebase.initializeApp(firebaseConfig);
 const db=firebase.database();
 const auth=firebase.auth();
@@ -105,18 +106,24 @@ let applyingRemote=false;
 function clone(b){return b.map(row=>row.map(p=>p?{...p}:null))}
 function inside(r,c){return r>=0&&r<8&&c>=0&&c<8}
 function opponent(color){return color==="white"?"black":"white"}
+
 function initialBoard(){
  let b=Array.from({length:8},()=>Array(8).fill(null));
  for(let r=0;r<3;r++)for(let c=0;c<8;c++)if((r+c)%2===1)b[r][c]={color:"black",king:false};
  for(let r=5;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2===1)b[r][c]={color:"white",king:false};
  return b;
 }
+
 function newGame(){
- if(mode==="online"&&roomId){if(myRole==="host")sendState({board:initialBoard(),turn:"white",gameOver:false});return}
+ if(mode==="online"&&roomId){
+  if(myRole==="host")sendState({board:initialBoard(),turn:"white",gameOver:false});
+  return;
+ }
  gameId++;board=initialBoard();turn="white";selected=null;moves=[];gameOver=false;botThinking=false;
  document.getElementById("message").textContent="Выберите свою шашку";
  updateStatus();render();
 }
+
 function setMode(m){
  if(roomId)leaveRoom();
  mode=m;
@@ -127,7 +134,12 @@ function setMode(m){
  document.getElementById("onlinePanel").style.display=m==="online"?"block":"none";
  newGame();
 }
-function setLevel(n){level=n;["easy","medium","hard"].forEach((id,i)=>document.getElementById(id).classList.toggle("active",[1,2,3][i]===n));newGame()}
+
+function setLevel(n){
+ level=n;
+ ["easy","medium","hard"].forEach((id,i)=>document.getElementById(id).classList.toggle("active",[1,2,3][i]===n));
+ newGame();
+}
 
 function getCaptures(b,r,c){
  const p=b[r][c];if(!p)return [];
@@ -135,41 +147,59 @@ function getCaptures(b,r,c){
  for(const [dr,dc] of dirs){
   if(!p.king){
    const mr=r+dr,mc=c+dc,lr=r+2*dr,lc=c+2*dc;
-   if(inside(lr,lc)&&b[mr][mc]&&b[mr][mc].color!==p.color&&!b[lr][lc])out.push({r:lr,c:lc,capture:{r:mr,c:mc}});
+   if(inside(lr,lc)&&b[mr][mc]&&b[mr][mc].color!==p.color&&!b[lr][lc])
+    out.push({r:lr,c:lc,capture:{r:mr,c:mc}});
   }else{
    let nr=r+dr,nc=c+dc;
    while(inside(nr,nc)&&!b[nr][nc]){nr+=dr;nc+=dc}
    if(!inside(nr,nc)||b[nr][nc].color===p.color)continue;
    const cr=nr,cc=nc;nr+=dr;nc+=dc;
-   while(inside(nr,nc)&&!b[nr][nc]){out.push({r:nr,c:nc,capture:{r:cr,c:cc}});nr+=dr;nc+=dc}
+   while(inside(nr,nc)&&!b[nr][nc]){
+    out.push({r:nr,c:nc,capture:{r:cr,c:cc}});
+    nr+=dr;nc+=dc;
+   }
   }
  }
  return out;
 }
+
 function captureSequences(b,r,c,path=[],taken=[]){
  const opts=getCaptures(b,r,c);
  if(!opts.length)return taken.length?[{path,taken}]:[];
  let results=[];
  for(const m of opts){
-  const nb=clone(b),p=nb[r][c];nb[r][c]=null;nb[m.capture.r][m.capture.c]=null;nb[m.r][m.c]=p;
+  const nb=clone(b),p=nb[r][c];
+  nb[r][c]=null;nb[m.capture.r][m.capture.c]=null;nb[m.r][m.c]=p;
   if(!p.king&&((p.color==="white"&&m.r===0)||(p.color==="black"&&m.r===7)))p.king=true;
   results.push(...captureSequences(nb,m.r,m.c,path.concat([{r:m.r,c:m.c}]),taken.concat([m.capture])));
  }
  return results;
 }
+
 function simpleMoves(b,r,c){
  const p=b[r][c],out=[];if(!p)return out;
  if(p.king){
-  for(const dr of [-1,1])for(const dc of [-1,1]){let nr=r+dr,nc=c+dc;while(inside(nr,nc)&&!b[nr][nc]){out.push({from:{r,c},path:[{r:nr,c:nc}],taken:[]});nr+=dr;nc+=dc}}
+  for(const dr of [-1,1])for(const dc of [-1,1]){
+   let nr=r+dr,nc=c+dc;
+   while(inside(nr,nc)&&!b[nr][nc]){
+    out.push({from:{r,c},path:[{r:nr,c:nc}],taken:[]});
+    nr+=dr;nc+=dc;
+   }
+  }
  }else{
   const dr=p.color==="white"?-1:1;
-  for(const dc of [-1,1]){const nr=r+dr,nc=c+dc;if(inside(nr,nc)&&!b[nr][nc])out.push({from:{r,c},path:[{r:nr,c:nc}],taken:[]})}
+  for(const dc of [-1,1]){
+   const nr=r+dr,nc=c+dc;
+   if(inside(nr,nc)&&!b[nr][nc])out.push({from:{r,c},path:[{r:nr,c:nc}],taken:[]});
+  }
  }
  return out;
 }
+
 function legalTurns(b,color){
  let captureExists=false;
- for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(b[r][c]?.color===color&&getCaptures(b,r,c).length)captureExists=true;
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++)
+  if(b[r][c]?.color===color&&getCaptures(b,r,c).length)captureExists=true;
  const out=[];
  for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(b[r][c]?.color===color){
   if(captureExists){
@@ -179,147 +209,407 @@ function legalTurns(b,color){
  }
  return out;
 }
+
 function applyTurn(b,m){
- const nb=clone(b),p=nb[m.from.r][m.from.c];nb[m.from.r][m.from.c]=null;
- for(let i=0;i<m.path.length;i++){if(m.taken[i])nb[m.taken[i].r][m.taken[i].c]=null;const pos=m.path[i];if(!p.king&&((p.color==="white"&&pos.r===0)||(p.color==="black"&&pos.r===7)))p.king=true}
- const end=m.path[m.path.length-1];nb[end.r][end.c]=p;return nb;
+ const nb=clone(b),p=nb[m.from.r][m.from.c];
+ nb[m.from.r][m.from.c]=null;
+ for(let i=0;i<m.path.length;i++){
+  if(m.taken[i])nb[m.taken[i].r][m.taken[i].c]=null;
+  const pos=m.path[i];
+  if(!p.king&&((p.color==="white"&&pos.r===0)||(p.color==="black"&&pos.r===7)))p.king=true;
+ }
+ const end=m.path[m.path.length-1];
+ nb[end.r][end.c]=p;
+ return nb;
 }
+
 function evaluate(b,color){
- let s=0;for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=b[r][c];if(!p)continue;let v=p.king?8:3;if(!p.king)v+=p.color==="black"?r*.12:(7-r)*.12;s+=p.color===color?v:-v}return s;
+ let s=0;
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+  const p=b[r][c];if(!p)continue;
+  let v=p.king?8:3;
+  if(!p.king)v+=p.color==="black"?r*.12:(7-r)*.12;
+  s+=p.color===color?v:-v;
+ }
+ return s;
 }
+
 function minimax(b,depth,color,ai,alpha,beta){
- const turns=legalTurns(b,color);if(!turns.length)return color===ai?-10000-depth:10000+depth;if(depth===0)return evaluate(b,ai);
+ const turns=legalTurns(b,color);
+ if(!turns.length)return color===ai?-10000-depth:10000+depth;
+ if(depth===0)return evaluate(b,ai);
  const max=color===ai;let best=max?-Infinity:Infinity;
  turns.sort((a,b)=>b.taken.length-a.taken.length);
- for(const m of turns){const v=minimax(applyTurn(b,m),depth-1,opponent(color),ai,alpha,beta);if(max){best=Math.max(best,v);alpha=Math.max(alpha,best)}else{best=Math.min(best,v);beta=Math.min(beta,best)}if(beta<=alpha)break}
+ for(const m of turns){
+  const v=minimax(applyTurn(b,m),depth-1,opponent(color),ai,alpha,beta);
+  if(max){best=Math.max(best,v);alpha=Math.max(alpha,best)}
+  else{best=Math.min(best,v);beta=Math.min(beta,best)}
+  if(beta<=alpha)break;
+ }
  return best;
 }
+
 function chooseBotMove(){
  const list=legalTurns(board,"black");if(!list.length)return null;
  if(level===1)return list[Math.floor(Math.random()*list.length)];
- let best=-Infinity,choices=[];for(const m of list){const v=minimax(applyTurn(board,m),level===2?2:3,"white","black",-Infinity,Infinity);if(v>best){best=v;choices=[m]}else if(v===best)choices.push(m)}
+ let best=-Infinity,choices=[];
+ for(const m of list){
+  const v=minimax(applyTurn(board,m),level===2?2:3,"white","black",-Infinity,Infinity);
+  if(v>best){best=v;choices=[m]}
+  else if(v===best)choices.push(m);
+ }
  return choices[Math.floor(Math.random()*choices.length)];
 }
+
 function updateStatus(){
  if(gameOver)return;
  let label="Ход "+(turn==="white"?"белых":"чёрных");
  if(mode==="bot"&&botThinking)label="🤖 Бот думает...";
- if(mode==="online"&&roomId)label="Онлайн: "+(turn==="white"?"белые":"чёрные")+" · Вы играете за "+(myRole==="host"?"белых":"чёрных");
+ if(mode==="online"&&roomId)
+  label="Онлайн: "+(turn==="white"?"белые":"чёрные")+" · Вы играете за "+(myRole==="host"?"белых":"чёрных");
  document.getElementById("status").textContent=label;
 }
+
 function finishTurn(){
  turn=opponent(turn);selected=null;moves=[];
- if(!legalTurns(board,turn).length){gameOver=true;document.getElementById("status").textContent="🏆 Победили "+(turn==="white"?"чёрные":"белые")+"!";document.getElementById("message").textContent="Игра окончена!"}
- else updateStatus();
+ if(!legalTurns(board,turn).length){
+  gameOver=true;
+  document.getElementById("status").textContent="🏆 Победили "+(turn==="white"?"чёрные":"белые")+"!";
+  document.getElementById("message").textContent="Игра окончена!";
+ }else updateStatus();
 }
+
+/* ПЛАВНАЯ АНИМАЦИЯ ШАШЕК */
+
+function preparePieceAnimation(from){
+ const cell=document.getElementById("board").children[from.r*8+from.c];
+ const piece=cell?.querySelector(".piece");
+ if(!piece)return null;
+
+ const rect=piece.getBoundingClientRect();
+ const ghost=piece.cloneNode(true);
+
+ Object.assign(ghost.style,{
+  position:"fixed",
+  left:rect.left+"px",
+  top:rect.top+"px",
+  width:rect.width+"px",
+  height:rect.height+"px",
+  margin:"0",
+  zIndex:"9999",
+  pointerEvents:"none"
+ });
+
+ document.body.appendChild(ghost);
+ return ghost;
+}
+
+function finishPieceAnimation(ghost,to){
+ if(!ghost)return;
+
+ const cell=document.getElementById("board").children[to.r*8+to.c];
+ if(!cell){ghost.remove();return}
+
+ const target=cell.querySelector(".piece");
+ if(target)target.style.visibility="hidden";
+
+ const rect=cell.getBoundingClientRect();
+ const dx=rect.left+rect.width/2-
+  (parseFloat(ghost.style.left)+ghost.offsetWidth/2);
+ const dy=rect.top+rect.height/2-
+  (parseFloat(ghost.style.top)+ghost.offsetHeight/2);
+
+ const animation=ghost.animate([
+  {transform:"translate(0,0)"},
+  {transform:`translate(${dx}px,${dy}px)`}
+ ],{
+  duration:350,
+  easing:"ease-in-out"
+ });
+
+ animation.onfinish=()=>{
+  ghost.remove();
+  if(target)target.style.visibility="";
+ };
+}
+
+function findMovedPiece(oldBoard,newBoard){
+ if(!oldBoard||!newBoard)return null;
+
+ const starts=[],ends=[];
+
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+  const oldP=oldBoard[r][c],newP=newBoard[r][c];
+
+  if(oldP&&!newP)starts.push({r,c,p:oldP});
+  if(newP&&!oldP)ends.push({r,c,p:newP});
+ }
+
+ for(const start of starts){
+  for(const end of ends){
+   if(start.p.color===end.p.color){
+    return {from:{r:start.r,c:start.c},to:{r:end.r,c:end.c}};
+   }
+  }
+ }
+ return null;
+}
+
+function animateRemoteMove(oldBoard,newBoard){
+ const move=findMovedPiece(oldBoard,newBoard);
+ if(!move)return null;
+ return preparePieceAnimation(move.from);
+}
+
+/* КОНЕЦ АНИМАЦИИ */
+
 function makeMove(m){
- board=applyTurn(board,m);finishTurn();render();
+ const ghost=preparePieceAnimation(m.from);
+ const end=m.path[m.path.length-1];
+
+ board=applyTurn(board,m);
+ finishTurn();
+ render();
+
+ finishPieceAnimation(ghost,end);
+
  if(mode==="online"&&roomId)sendState({board,turn,gameOver});
  if(mode==="bot"&&turn==="black"&&!gameOver)startBot();
 }
+
 function startBot(){
  botThinking=true;updateStatus();const id=gameId;
- setTimeout(()=>{if(id!==gameId||gameOver||mode!=="bot")return;botThinking=false;const m=chooseBotMove();if(m)makeMove(m)},350);
+ setTimeout(()=>{
+  if(id!==gameId||gameOver||mode!=="bot")return;
+  botThinking=false;
+  const m=chooseBotMove();
+  if(m)makeMove(m);
+ },350);
 }
+
 function clickCell(r,c){
  if(gameOver||botThinking)return;
- if(mode==="online"&&(!roomId||!myRole||(myRole==="host"&&turn!=="white")||(myRole==="guest"&&turn!=="black")))return;
+ if(mode==="online"&&(!roomId||!myRole||
+  (myRole==="host"&&turn!=="white")||
+  (myRole==="guest"&&turn!=="black")))return;
+
  if(selected){
   const m=moves.find(x=>x.path.length===1&&x.path[0].r===r&&x.path[0].c===c);
   if(m){makeMove(m);selected=null;moves=[];return}
+
   const full=moves.find(x=>x.path[x.path.length-1].r===r&&x.path[x.path.length-1].c===c);
   if(full){makeMove(full);selected=null;moves=[];return}
  }
+
  if(board[r][c]&&board[r][c].color===turn){
   const opts=legalTurns(board,turn).filter(m=>m.from.r===r&&m.from.c===c);
-  if(!opts.length){document.getElementById("message").textContent="Нет доступных ходов или обязательно нужно бить";return}
-  selected={r,c};moves=opts;document.getElementById("message").textContent=opts.some(m=>m.taken.length)?"Выберите конечную клетку взятия":"Выберите ход";
+  if(!opts.length){
+   document.getElementById("message").textContent="Нет доступных ходов или обязательно нужно бить";
+   return;
+  }
+  selected={r,c};moves=opts;
+  document.getElementById("message").textContent=opts.some(m=>m.taken.length)?"Выберите конечную клетку взятия":"Выберите ход";
  }else{selected=null;moves=[]}
  render();
 }
+
 function render(){
- const el=document.getElementById("board");el.innerHTML="";
+ const el=document.getElementById("board");
+ el.innerHTML="";
  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-  const cell=document.createElement("div");cell.className="cell "+((r+c)%2?"dark":"");
+  const cell=document.createElement("div");
+  cell.className="cell "+((r+c)%2?"dark":"");
   if(selected&&selected.r===r&&selected.c===c)cell.classList.add("selected");
-  if(moves.some(m=>{const p=m.path[m.path.length-1];return p.r===r&&p.c===c}))cell.classList.add("possible");
-  const p=board[r]?.[c];if(p){const piece=document.createElement("div");piece.className="piece "+p.color;if(p.king)piece.textContent="♛";cell.appendChild(piece)}
-  cell.onclick=()=>clickCell(r,c);el.appendChild(cell);
+  if(moves.some(m=>{
+   const p=m.path[m.path.length-1];
+   return p.r===r&&p.c===c;
+  }))cell.classList.add("possible");
+
+  const p=board[r]?.[c];
+  if(p){
+   const piece=document.createElement("div");
+   piece.className="piece "+p.color;
+   if(p.king)piece.textContent="♛";
+   cell.appendChild(piece);
+  }
+  cell.onclick=()=>clickCell(r,c);
+  el.appendChild(cell);
  }
 }
-function setMessage(t){document.getElementById("roomStatus").textContent=t}
+
+function setMessage(t){
+ document.getElementById("roomStatus").textContent=t;
+}
+
 async function passwordHash(value){
  if(!value)return "";
  const bytes=new TextEncoder().encode(value);
  const digest=await crypto.subtle.digest("SHA-256",bytes);
  return Array.from(new Uint8Array(digest)).map(x=>x.toString(16).padStart(2,"0")).join("");
 }
+
 auth.signInAnonymously().then(cred=>{
- myUid=cred.user.uid;setMessage("Firebase подключён. Можно создавать комнаты.");refreshRooms();
+ myUid=cred.user.uid;
+ setMessage("Firebase подключён. Можно создавать комнаты.");
+ refreshRooms();
 }).catch(err=>setMessage("Ошибка входа Firebase: "+err.message));
+
 function refreshRooms(){
  if(!myUid){setMessage("Подожди подключения...");return}
  db.ref("rooms").once("value").then(snap=>{
-  const list=document.getElementById("roomList");list.innerHTML="";
-  const rooms=snap.val()||{};let count=0;
+  const list=document.getElementById("roomList");
+  list.innerHTML="";
+  const rooms=snap.val()||{};
+  let count=0;
+
   Object.entries(rooms).forEach(([id,room])=>{
    if(room.guestUid&&room.guestUid!==myUid)return;
    if(!room.hostUid)return;
-   count++;const div=document.createElement("div");div.className="room";
-   const title=document.createElement("b");title.textContent=room.name||"Комната";
-   const info=document.createElement("span");info.className="small";info.textContent=room.guestUid?" · занята":" · свободна";
-   const btn=document.createElement("button");btn.textContent="Войти";btn.onclick=()=>joinRoom(id,room.passwordHash||"");
-   div.append(title,info,btn);list.appendChild(div);
+   count++;
+
+   const div=document.createElement("div");
+   div.className="room";
+   const title=document.createElement("b");
+   title.textContent=room.name||"Комната";
+   const info=document.createElement("span");
+   info.className="small";
+   info.textContent=room.guestUid?" · занята":" · свободна";
+   const btn=document.createElement("button");
+   btn.textContent="Войти";
+   btn.onclick=()=>joinRoom(id,room.passwordHash||"");
+
+   div.append(title,info,btn);
+   list.appendChild(div);
   });
+
   if(!count)list.textContent="Пока нет свободных комнат.";
  }).catch(e=>setMessage("Не удалось загрузить комнаты: "+e.message));
 }
+
 async function createRoom(){
  if(!myUid){setMessage("Подожди подключения к Firebase.");return}
  if(roomId){setMessage("Сначала выйди из текущей комнаты.");return}
+
  const name=document.getElementById("roomName").value.trim()||"Комната";
  const pass=document.getElementById("roomPassword").value;
  const id=db.ref("rooms").push().key;
- const data={name,hostUid:myUid,passwordHash:await passwordHash(pass),state:{board:initialBoard(),turn:"white",gameOver:false},createdAt:Date.now()};
- try{await db.ref("rooms/"+id).set(data);connectRoom(id,"host");setMessage("Комната создана. Ожидаем второго игрока.");refreshRooms()}
- catch(e){setMessage("Ошибка создания: "+e.message)}
+
+ const data={
+  name,
+  hostUid:myUid,
+  passwordHash:await passwordHash(pass),
+  state:{board:initialBoard(),turn:"white",gameOver:false},
+  createdAt:Date.now()
+ };
+
+ try{
+  await db.ref("rooms/"+id).set(data);
+  connectRoom(id,"host");
+  setMessage("Комната создана. Ожидаем второго игрока.");
+  refreshRooms();
+ }catch(e){setMessage("Ошибка создания: "+e.message)}
 }
+
 async function joinRoom(id,expectedHash){
  if(!myUid||roomId)return;
+
  const pass=document.getElementById("roomPassword").value;
- if(expectedHash&&await passwordHash(pass)!==expectedHash){setMessage("Неверный пароль.");return}
+ if(expectedHash&&await passwordHash(pass)!==expectedHash){
+  setMessage("Неверный пароль.");
+  return;
+ }
+
  const ref=db.ref("rooms/"+id);
  try{
   const result=await ref.child("guestUid").transaction(current=>current||myUid);
-  if(!result.committed||result.snapshot.val()!==myUid){setMessage("Комната уже занята.");refreshRooms();return}
-  connectRoom(id,"guest");setMessage("Ты подключился к комнате.");refreshRooms()
+  if(!result.committed||result.snapshot.val()!==myUid){
+   setMessage("Комната уже занята.");
+   refreshRooms();
+   return;
+  }
+  connectRoom(id,"guest");
+  setMessage("Ты подключился к комнате.");
+  refreshRooms();
  }catch(e){setMessage("Ошибка входа: "+e.message)}
 }
+
 function connectRoom(id,role){
- roomId=id;myRole=role;roomRef=db.ref("rooms/"+id);
- document.getElementById("currentRoom").textContent="В комнате: "+id+" · Ваша сторона: "+(role==="host"?"белые":"чёрные");
- mode="online";document.getElementById("onlineMode").classList.add("active");document.getElementById("botMode").classList.remove("active");document.getElementById("twoMode").classList.remove("active");
+ roomId=id;
+ myRole=role;
+ roomRef=db.ref("rooms/"+id);
+
+ document.getElementById("currentRoom").textContent=
+  "В комнате: "+id+" · Ваша сторона: "+(role==="host"?"белые":"чёрные");
+
+ mode="online";
+ document.getElementById("onlineMode").classList.add("active");
+ document.getElementById("botMode").classList.remove("active");
+ document.getElementById("twoMode").classList.remove("active");
+
  roomListener=snap=>{
-  const data=snap.val();if(!data){leaveRoom(false);setMessage("Комната удалена.");return}
-  if(role==="guest"&&!data.guestUid){setMessage("Ожидание подключения...");return}
-  if(data.state&&data.state.board){board=data.state.board;turn=data.state.turn;gameOver=!!data.state.gameOver;selected=null;moves=[];updateStatus();render()}
-  setMessage(role==="host"?(data.guestUid?"Игрок подключился!":"Ожидаем второго игрока..."):"Ты в комнате. Твой ход — когда ход чёрных.");
+  const data=snap.val();
+  if(!data){leaveRoom(false);setMessage("Комната удалена.");return}
+  if(role==="guest"&&!data.guestUid){
+   setMessage("Ожидание подключения...");
+   return;
+  }
+
+  if(data.state&&data.state.board){
+   const nextBoard=data.state.board;
+   const ghost=animateRemoteMove(board,nextBoard);
+
+   board=nextBoard;
+   turn=data.state.turn;
+   gameOver=!!data.state.gameOver;
+   selected=null;
+   moves=[];
+   updateStatus();
+   render();
+
+   const move=findMovedPieceForAnimation;
+   if(ghost){
+    const changed=findLastAnimationTarget;
+   }
+  }
+
+  setMessage(role==="host"?
+   (data.guestUid?"Игрок подключился!":"Ожидаем второго игрока..."):
+   "Ты в комнате. Твой ход — когда ход чёрных.");
  };
+
  roomRef.on("value",roomListener);
 }
+
 function sendState(state){
  if(!roomRef)return;
  roomRef.child("state").set(state).catch(e=>setMessage("Ошибка отправки хода: "+e.message));
 }
+
 function leaveRoom(removeIfHost=true){
  if(roomRef&&roomListener)roomRef.off("value",roomListener);
+
  if(roomRef&&myRole==="host"&&removeIfHost)roomRef.remove().catch(()=>{});
  else if(roomRef&&myRole==="guest"&&removeIfHost)roomRef.child("guestUid").set("");
- roomRef=null;roomListener=null;roomId=null;myRole=null;
+
+ roomRef=null;
+ roomListener=null;
+ roomId=null;
+ myRole=null;
+
  document.getElementById("currentRoom").textContent="";
- if(mode==="online"){board=initialBoard();turn="white";gameOver=false;selected=null;moves=[];updateStatus();render()}
+
+ if(mode==="online"){
+  board=initialBoard();
+  turn="white";
+  gameOver=false;
+  selected=null;
+  moves=[];
+  updateStatus();
+  render();
+ }
  refreshRooms();
 }
+
 newGame();
 </script>
 </body>
