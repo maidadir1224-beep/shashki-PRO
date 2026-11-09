@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -101,6 +102,7 @@ let board=[],turn="white",selected=null,moves=[],gameOver=false;
 let mode="bot",level=2,botThinking=false,gameId=0;
 let myUid=null,myRole=null,roomId=null,roomRef=null,roomListener=null;
 let applyingRemote=false;
+let roomStarted=false;
 
 function clone(b){return b.map(row=>row.map(p=>p?{...p}:null))}
 function inside(r,c){return r>=0&&r<8&&c>=0&&c<8}
@@ -281,7 +283,7 @@ async function createRoom(){
  const pass=document.getElementById("roomPassword").value;
  const id=db.ref("rooms").push().key;
  const data={name,hostUid:myUid,passwordHash:await passwordHash(pass),state:{board:initialBoard(),turn:"white",gameOver:false},createdAt:Date.now()};
- try{await db.ref("rooms/"+id).set(data);connectRoom(id,"host");setMessage("Комната создана. Отправь другу ссылку/название игры и дождись его подключения.");refreshRooms()}
+ try{await db.ref("rooms/"+id).set(data);connectRoom(id,"host");setMessage("Комната создана. Ждём второго игрока.");refreshRooms()}
  catch(e){setMessage("Ошибка создания: "+e.message)}
 }
 async function joinRoom(id,expectedHash){
@@ -295,15 +297,38 @@ async function joinRoom(id,expectedHash){
   connectRoom(id,"guest");setMessage("Ты подключился к комнате.");refreshRooms()
  }catch(e){setMessage("Ошибка входа: "+e.message)}
 }
+function setRoomLobby(connected){
+ const panel=document.getElementById("onlinePanel");
+ const inputs=panel.querySelectorAll("input");
+ const controls=panel.querySelector(".row");
+ const list=document.getElementById("roomList");
+ inputs.forEach(el=>el.style.display=connected?"none":"");
+ if(controls)controls.style.display=connected?"none":"flex";
+ if(list)list.style.display=connected?"none":"block";
+ const heading=panel.querySelector("h3");
+ if(heading)heading.textContent=connected?"🎮 ИГРА В КОМНАТЕ":"🌐 ОНЛАЙН-СЕРВЕРЫ";
+}
 function connectRoom(id,role){
  roomId=id;myRole=role;roomRef=db.ref("rooms/"+id);
+ roomStarted=false;
+ setRoomLobby(false);
  document.getElementById("currentRoom").textContent="В комнате: "+id+" · Ваша сторона: "+(role==="host"?"белые":"чёрные");
  mode="online";document.getElementById("onlineMode").classList.add("active");document.getElementById("botMode").classList.remove("active");document.getElementById("twoMode").classList.remove("active");
+ document.getElementById("difficultyArea").style.display="none";
  roomListener=snap=>{
   const data=snap.val();if(!data){leaveRoom(false);setMessage("Комната удалена.");return}
-  if(role==="guest"&&!data.guestUid){setMessage("Ожидание подключения...");return}
   if(data.state&&data.state.board){applyingRemote=true;board=data.state.board;turn=data.state.turn;gameOver=!!data.state.gameOver;selected=null;moves=[];applyingRemote=false;updateStatus();render()}
-  setMessage(role==="host"?(data.guestUid?"Игрок подключился!":"Ожидаем второго игрока..."):"Ты в комнате. Твой ход — когда ход чёрных.");
+  const connected=!!data.guestUid;
+  if(connected&&!roomStarted){
+   roomStarted=true;setRoomLobby(true);
+   setMessage("Оба игрока подключились! Игра началась — первыми ходят белые.");
+   document.getElementById("board").scrollIntoView({behavior:"smooth",block:"center"});
+  }else if(!connected){
+   roomStarted=false;setRoomLobby(false);
+   setMessage(role==="host"?"Ожидаем подключения второго игрока...":"Ожидание второго игрока...");
+  }else{
+   setMessage("Матч идёт. "+(turn==="white"?"Ход белых.":"Ход чёрных."));
+  }
  };
  roomRef.on("value",roomListener);
 }
@@ -315,7 +340,8 @@ function leaveRoom(removeIfHost=true){
  if(roomRef&&roomListener)roomRef.off("value",roomListener);
  if(roomRef&&myRole==="host"&&removeIfHost)roomRef.remove().catch(()=>{});
  else if(roomRef&&myRole==="guest"&&removeIfHost)roomRef.child("guestUid").set("");
- roomRef=null;roomListener=null;roomId=null;myRole=null;
+ roomRef=null;roomListener=null;roomId=null;myRole=null;roomStarted=false;
+ setRoomLobby(false);
  document.getElementById("currentRoom").textContent="";
  if(mode==="online"){board=initialBoard();turn="white";gameOver=false;selected=null;moves=[];updateStatus();render()}
  refreshRooms();
